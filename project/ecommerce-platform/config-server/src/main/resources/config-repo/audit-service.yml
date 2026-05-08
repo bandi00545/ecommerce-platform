@@ -1,0 +1,80 @@
+# =============================================================================
+# audit-service.yml — Config Server config for Audit Service
+# =============================================================================
+server:
+  port: 8086
+
+spring:
+  application:
+    name: audit-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ecommerce
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: AuditServiceHikariPool
+      # Higher pool size: audit-service handles very high write volume
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: audit_service
+        # Batch inserts for audit log bulk writes
+        jdbc.batch_size: 50
+        order_inserts: true
+
+  flyway:
+    url: ${spring.datasource.url}
+    user: ${spring.datasource.username}
+    password: ${spring.datasource.password}
+
+app:
+  kafka:
+    topic:
+      audit: audit.events
+
+kafka:
+  bootstrap-servers: localhost:9092
+  consumer:
+    group-id: audit-service-group
+    auto-offset-reset: earliest
+    key-deserializer:   org.apache.kafka.common.serialization.StringDeserializer
+    value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    properties:
+      # Batch: fetch up to 50 records per poll
+      max.poll.records: 50
+      # Wait for at least 1KB of data or 500ms before returning
+      fetch.min.bytes: 1024
+      fetch.max.wait.ms: 500
+      enable.auto.commit: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: audit-service
+
+logging:
+  level:
+    root: INFO
+    com.ecommerce: DEBUG
+    schemas: audit_service
+    default-schema: audit_service
+    create-schemas: true

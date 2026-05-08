@@ -1,0 +1,42 @@
+server:
+  port: 8888
+
+spring:
+  application:
+    name: config-server
+
+  # Activate native profile so config files are served from classpath:/config-repo
+  profiles:
+    active: native
+
+  # Security for Config Server - all services must provide credentials
+  security:
+    user:
+      name: configuser
+      password: configpass123
+
+  cloud:
+    config:
+      server:
+        # 'native' profile reads config from local filesystem
+        # Switch to 'git' in production for version-controlled configs
+        native:
+          search-locations: classpath:/config-repo
+        # Encrypt sensitive values (passwords, secrets) in config files
+        encrypt:
+          enabled: true
+
+# Expose health and refresh endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,refresh,env
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: INFO
+    com.ecommerce: DEBUG

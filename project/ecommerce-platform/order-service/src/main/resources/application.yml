@@ -1,0 +1,156 @@
+# order-service/src/main/resources/application.yml
+server:
+  port: 8083
+
+spring:
+  application:
+    name: order-service
+
+  config:
+    import: optional:configserver:http://configuser:configpass123@localhost:8888
+
+  cloud:
+    config:
+      enabled: false
+      fail-fast: false
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ecommerce
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: OrderServiceHikariPool
+      maximum-pool-size: 15
+      minimum-idle: 3
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        default_schema: order_service
+        jdbc:
+          batch_size: 20
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    schemas: order_service
+    default-schema: order_service
+    create-schemas: true
+
+  cache:
+    type: simple
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer:   org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    listener:
+      missing-topics-fatal: false
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://eurekauser:eurekapass123@localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+app:
+  services:
+    product-url: http://localhost:8082
+  kafka:
+    topic:
+      order-created:        order.created
+      order-completed:      order.completed
+      order-failed:         order.failed
+      payment-request:      payment.request
+      payment-response:     payment.response
+      transaction-request:  transaction.request
+      transaction-response: transaction.response
+      audit:                audit.events
+      outbox:               outbox.events
+  saga:
+    timeout-minutes: 5
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      paymentServiceCB:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+      productServiceCB:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+      transactionServiceCB:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+  retry:
+    instances:
+      productServiceCB:
+        max-attempts: 3
+        wait-duration: 500ms
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+  packages-to-scan: com.ecommerce.orderservice.controller
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: order-service
+
+logging:
+  level:
+    root: INFO
+    com.ecommerce: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  cloud:
+    config:
+      enabled: true
+  cache:
+    type: redis
+eureka:
+  client:
+    enabled: true
+    register-with-eureka: true
+    fetch-registry: true

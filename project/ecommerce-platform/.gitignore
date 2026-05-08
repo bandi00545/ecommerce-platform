@@ -1,0 +1,100 @@
+# =============================================================================
+# .gitignore — E-Commerce Platform
+# =============================================================================
+
+# ── Maven ─────────────────────────────────────────────────────
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+*.jar
+*.war
+*.ear
+*.class
+
+# ── Spring Boot ───────────────────────────────────────────────
+*.log
+logs/
+spring-shell.log
+
+# ── IDE — IntelliJ IDEA ───────────────────────────────────────
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+.idea_modules/
+
+# ── IDE — VS Code ─────────────────────────────────────────────
+.vscode/
+*.code-workspace
+
+# ── IDE — Eclipse ─────────────────────────────────────────────
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+# ── IDE — NetBeans ────────────────────────────────────────────
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# ── OS ────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ── Docker ────────────────────────────────────────────────────
+# Keep docker-compose.yml and Dockerfile, ignore local overrides
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ── Environment / Secrets ─────────────────────────────────────
+# NEVER commit real secrets — use .env.example as template
+.env
+.env.local
+.env.prod
+*.pem
+*.key
+*.p12
+*.jks
+secrets/
+
+# ── MapStruct generated sources (regenerated at compile time) ──
+# Comment this out if your IDE needs to see generated files
+# **/generated-sources/
+
+# ── JRebel ────────────────────────────────────────────────────
+rebel.xml
+rebel-remote.xml
+
+# ── Hibernate DDL exports ─────────────────────────────────────
+*.sql.export
+
+# ── Test outputs ──────────────────────────────────────────────
+**/surefire-reports/
+**/failsafe-reports/
+**/*.exec
+
+# ── Jacoco coverage ───────────────────────────────────────────
+jacoco.exec
+jacoco/
+
+# ── SonarQube ─────────────────────────────────────────────────
+.sonar/
+.sonarqube/
+
+# ── Kubernetes / Helm (if added later) ───────────────────────
+*.kubeconfig
+charts/

@@ -1,0 +1,84 @@
+# =============================================================================
+# order-service.yml
+# =============================================================================
+server:
+  port: 8083
+spring:
+  application:
+    name: order-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ecommerce
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: OrderServiceHikariPool
+      maximum-pool-size: 15
+      minimum-idle: 3
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: order_service
+  flyway:
+    url: ${spring.datasource.url}
+    user: ${spring.datasource.username}
+    password: ${spring.datasource.password}
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+  cache:
+    type: redis
+
+# Kafka config
+    schemas: order_service
+    default-schema: order_service
+    create-schemas: true
+app:
+  kafka:
+    topic:
+      order-created: order.created
+      order-completed: order.completed
+      order-failed: order.failed
+      payment-request: payment.request
+      payment-response: payment.response
+      audit: audit.events
+      outbox: outbox.events
+  saga:
+    timeout-minutes: 5
+
+kafka:
+  bootstrap-servers: localhost:9092
+  producer:
+    key-serializer: org.apache.kafka.common.serialization.StringSerializer
+    value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    acks: all
+    retries: 3
+    properties:
+      enable.idempotence: true
+  consumer:
+    group-id: order-service-group
+    auto-offset-reset: earliest
+    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+    properties:
+      spring.json.trusted.packages: "com.ecommerce.*"
+
+# Resilience4j - Order Service specific CB config
+resilience4j:
+  circuitbreaker:
+    instances:
+      paymentServiceCB:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+      transactionServiceCB:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3

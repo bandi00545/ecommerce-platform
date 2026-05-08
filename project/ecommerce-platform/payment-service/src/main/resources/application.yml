@@ -1,0 +1,110 @@
+# payment-service/src/main/resources/application.yml
+server:
+  port: 8084
+
+spring:
+  application:
+    name: payment-service
+
+  config:
+    import: optional:configserver:http://configuser:configpass123@localhost:8888
+
+  cloud:
+    config:
+      enabled: false
+      fail-fast: false
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ecommerce
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: PaymentServiceHikariPool
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: payment_service
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    schemas: payment_service
+    default-schema: payment_service
+    create-schemas: true
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer:   org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    listener:
+      missing-topics-fatal: false
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://eurekauser:eurekapass123@localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+app:
+  kafka:
+    topic:
+      payment-request:  payment.request
+      payment-response: payment.response
+      audit:            audit.events
+  payment:
+    failure-rate: 0.1
+    processing-delay-ms: 500
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+  packages-to-scan: com.ecommerce.paymentservice.controller
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: payment-service
+
+logging:
+  level:
+    root: INFO
+    com.ecommerce: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  cloud:
+    config:
+      enabled: true
+eureka:
+  client:
+    enabled: true
+    register-with-eureka: true
+    fetch-registry: true

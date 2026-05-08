@@ -1,0 +1,43 @@
+server:
+  port: 8761
+
+spring:
+  application:
+    name: eureka-server
+  security:
+    user:
+      name: eurekauser
+      password: eurekapass123
+
+eureka:
+  instance:
+    hostname: localhost
+  client:
+    # Eureka server does NOT register itself as a client
+    register-with-eureka: false
+    # Eureka server does NOT fetch registry from itself
+    fetch-registry: false
+    service-url:
+      defaultZone: http://${spring.security.user.name}:${spring.security.user.password}@${eureka.instance.hostname}:${server.port}/eureka/
+  server:
+    # Wait for this many services to register before serving traffic
+    # Prevents routing to services before they're ready
+    enable-self-preservation: false
+    eviction-interval-timer-in-ms: 5000
+    # Renewal threshold: below this % = preservation mode active
+    renewal-percent-threshold: 0.85
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: INFO
+    com.netflix.eureka: WARN
+    com.netflix.discovery: WARN

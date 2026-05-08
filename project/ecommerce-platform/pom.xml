@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.ecommerce</groupId>
+    <artifactId>ecommerce-platform</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+    <name>E-Commerce Platform - Parent POM</name>
+    <description>Enterprise Microservices E-Commerce Platform</description>
+
+    <!-- ===== ALL MODULES (uncomment as each phase is built) ===== -->
+    <modules>
+        <!-- Phase 1 -->
+        <module>ecommerce-common</module>
+
+            <!-- Phase 2 -->
+        <module>config-server</module>
+        <module>eureka-server</module>
+        <module>api-gateway</module>
+
+        <!-- Phase 3 -->
+        <module>user-service</module>
+
+        <!-- Phase 4 -->
+        <module>product-service</module>
+
+        <!-- Phase 5 -->
+        <module>order-service</module>
+
+        <!-- Phase 6 -->
+        <module>payment-service</module>
+        <module>transaction-service</module>
+
+        <!-- Phase 7 -->
+        <module>audit-service</module>
+    </modules>
+
+    <!-- ===== GLOBAL PROPERTIES ===== -->
+    <properties>
+        <java.version>17</java.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Core Versions -->
+        <spring-boot.version>3.2.4</spring-boot.version>
+        <spring-cloud.version>2023.0.1</spring-cloud.version>
+
+        <!-- Security -->
+        <jjwt.version>0.12.5</jjwt.version>
+
+        <!-- Utilities -->
+        <mapstruct.version>1.5.5.Final</mapstruct.version>
+        <lombok.version>1.18.30</lombok.version>
+
+        <!-- Resilience -->
+        <resilience4j.version>2.2.0</resilience4j.version>
+
+        <!-- Testing -->
+        <testcontainers.version>1.19.7</testcontainers.version>
+    </properties>
+
+    <!-- ===== DEPENDENCY MANAGEMENT (BOM) ===== -->
+    <dependencyManagement>
+        <dependencies>
+
+            <!-- Spring Boot BOM - manages all Spring Boot deps -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Spring Cloud BOM - manages Eureka, Config, Gateway -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Testcontainers BOM -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Internal: Common Library used by all services -->
+            <dependency>
+                <groupId>com.ecommerce</groupId>
+                <artifactId>ecommerce-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- JWT: jjwt-api (interface) -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+
+            <!-- JWT: jjwt-impl (runtime implementation) -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+                <scope>runtime</scope>
+            </dependency>
+
+            <!-- JWT: jjwt-jackson (JSON serialization) -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-jackson</artifactId>
+                <version>${jjwt.version}</version>
+                <scope>runtime</scope>
+            </dependency>
+
+            <!-- MapStruct: compile-time bean mapper -->
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+
+            <!-- Resilience4j for Spring Boot 3 -->
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-spring-boot3</artifactId>
+                <version>${resilience4j.version}</version>
+            </dependency>
+
+            <!-- SpotBugs annotations: @NonNull / @Nullable used across all services -->
+            <dependency>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-annotations</artifactId>
+                <version>4.8.3</version>
+            </dependency>
+
+            <!-- Springdoc OpenAPI (Swagger UI) for Spring MVC services -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>2.3.0</version>
+            </dependency>
+
+            <!-- Springdoc OpenAPI (Swagger UI) for reactive Spring WebFlux (api-gateway) -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
+                <version>2.3.0</version>
+            </dependency>
+
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- ===== INHERITED DEPENDENCIES (every module gets these automatically) ===== -->
+    <dependencies>
+        <!-- SpotBugs annotations are referenced from many classes (DTOs, filters, etc.) -->
+        <dependency>
+            <groupId>com.github.spotbugs</groupId>
+            <artifactId>spotbugs-annotations</artifactId>
+        </dependency>
+    </dependencies>
+
+    <!-- ===== BUILD PLUGIN MANAGEMENT ===== -->
+    <build>
+        <pluginManagement>
+            <plugins>
+
+                <!-- Spring Boot Maven Plugin -->
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring-boot.version}</version>
+                    <executions>
+                        <execution>
+                            <id>repackage</id>
+                            <goals>
+                                <goal>repackage</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                    <configuration>
+                        <!-- Exclude Lombok from final JAR -->
+                        <excludes>
+                            <exclude>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                            </exclude>
+                        </excludes>
+                    </configuration>
+                </plugin>
+
+                <!-- Maven Compiler Plugin with Lombok + MapStruct annotation processors -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.11.0</version>
+                    <configuration>
+                        <source>17</source>
+                        <target>17</target>
+                        <annotationProcessorPaths>
+                            <!-- Lombok must come BEFORE MapStruct -->
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.mapstruct</groupId>
+                                <artifactId>mapstruct-processor</artifactId>
+                                <version>${mapstruct.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                        <compilerArgs>
+                            <!-- MapStruct uses Spring CDI -->
+                            <compilerArg>-Amapstruct.defaultComponentModel=spring</compilerArg>
+                        </compilerArgs>
+                    </configuration>
+                </plugin>
+
+                <!-- Surefire: run unit tests -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.1.2</version>
+                </plugin>
+
+            </plugins>
+        </pluginManagement>
+    </build>
+
+</project>

@@ -1,0 +1,656 @@
+# =============================================================================
+# docker-compose.yml — E-Commerce Platform
+#
+# STARTUP ORDER (enforced via depends_on + health checks):
+# 1. Infrastructure: PostgreSQL DBs, Redis, Kafka + ZooKeeper
+# 2. Platform:       Config Server, Eureka Server
+# 3. Gateway:        API Gateway
+# 4. Services:       User, Product, Order, Payment, Transaction, Audit
+# 5. Monitoring:     Prometheus, Grafana
+#
+# USAGE:
+#   docker-compose up -d                    # start all services
+#   docker-compose up -d user-service       # start specific service
+#   docker-compose logs -f order-service    # tail logs
+#   docker-compose down -v                  # stop and remove volumes
+#
+# PORTS:
+#   8080 → API Gateway (public entry point)
+#   8761 → Eureka Dashboard
+#   8888 → Config Server
+#   9090 → Prometheus
+#   3000 → Grafana
+# =============================================================================
+
+version: "3.9"
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  ecommerce-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# =============================================================================
+# NAMED VOLUMES (persistent data survives container restarts)
+# =============================================================================
+volumes:
+  user-db-data:
+  product-db-data:
+  order-db-data:
+  payment-db-data:
+  transaction-db-data:
+  audit-db-data:
+  redis-data:
+  kafka-data:
+  zookeeper-data:
+  prometheus-data:
+  grafana-data:
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+
+  # ============================================================
+  # INFRASTRUCTURE LAYER
+  # ============================================================
+
+  # ── ZooKeeper (Kafka dependency) ──────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: zookeeper
+    networks: [ecommerce-net]
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME:   2000
+      ZOOKEEPER_SYNC_LIMIT:  2
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Kafka Broker ──────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka
+    networks: [ecommerce-net]
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"       # internal listener (container-to-container)
+      - "9094:9094"       # external listener (host → Kafka, for dev tools)
+    environment:
+      KAFKA_BROKER_ID:                        1
+      KAFKA_ZOOKEEPER_CONNECT:                zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP:   INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS:             INTERNAL://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_INTER_BROKER_LISTENER_NAME:       INTERNAL
+      KAFKA_LISTENERS:                        INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9094
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE:        "true"
+      KAFKA_NUM_PARTITIONS:                   3
+      KAFKA_DEFAULT_REPLICATION_FACTOR:       1
+      KAFKA_LOG_RETENTION_HOURS:              168           # 7 days
+      KAFKA_LOG_SEGMENT_BYTES:                1073741824    # 1 GB
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Kafka Topic Initializer (creates all topics on startup) ──
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka-init
+    networks: [ecommerce-net]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      echo 'Creating Kafka topics...'
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic audit.events          --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic user.events           --partitions 1 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic product.events        --partitions 1 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic order.created         --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic order.completed       --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic order.failed          --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic payment.request       --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic payment.response      --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic payment.refund.request --partitions 1 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic transaction.request   --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic transaction.response  --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic outbox.events         --partitions 3 --replication-factor 1
+      echo 'Kafka topics created successfully.'
+      "
+    restart: "no"
+
+  # ── Redis ─────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    networks: [ecommerce-net]
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save 60 1
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── PostgreSQL — User DB ───────────────────────────────────
+  user-db:
+    image: postgres:16-alpine
+    container_name: user-db
+    networks: [ecommerce-net]
+    environment:
+      POSTGRES_DB:       user_db
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d user_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── PostgreSQL — Product DB ────────────────────────────────
+  product-db:
+    image: postgres:16-alpine
+    container_name: product-db
+    networks: [ecommerce-net]
+    environment:
+      POSTGRES_DB:       product_db
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - product-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d product_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── PostgreSQL — Order DB ──────────────────────────────────
+  order-db:
+    image: postgres:16-alpine
+    container_name: order-db
+    networks: [ecommerce-net]
+    environment:
+      POSTGRES_DB:       order_db
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d order_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── PostgreSQL — Payment DB ────────────────────────────────
+  payment-db:
+    image: postgres:16-alpine
+    container_name: payment-db
+    networks: [ecommerce-net]
+    environment:
+      POSTGRES_DB:       payment_db
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
+    volumes:
+      - payment-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d payment_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── PostgreSQL — Transaction DB ────────────────────────────
+  transaction-db:
+    image: postgres:16-alpine
+    container_name: transaction-db
+    networks: [ecommerce-net]
+    environment:
+      POSTGRES_DB:       transaction_db
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5436:5432"
+    volumes:
+      - transaction-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d transaction_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── PostgreSQL — Audit DB ──────────────────────────────────
+  audit-db:
+    image: postgres:16-alpine
+    container_name: audit-db
+    networks: [ecommerce-net]
+    environment:
+      POSTGRES_DB:       audit_db
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5437:5432"
+    volumes:
+      - audit-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d audit_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================================
+  # PLATFORM LAYER
+  # ============================================================
+
+  # ── Config Server ─────────────────────────────────────────
+  config-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: config-server
+    image: ecommerce/config-server:1.0.0
+    container_name: config-server
+    networks: [ecommerce-net]
+    ports:
+      - "8888:8888"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT:            8888
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8888/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    restart: unless-stopped
+
+  # ── Eureka Server ─────────────────────────────────────────
+  eureka-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: eureka-server
+    image: ecommerce/eureka-server:1.0.0
+    container_name: eureka-server
+    networks: [ecommerce-net]
+    ports:
+      - "8761:8761"
+    depends_on:
+      config-server:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT:            8761
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  # ── API Gateway ───────────────────────────────────────────
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: api-gateway
+    image: ecommerce/api-gateway:1.0.0
+    container_name: api-gateway
+    networks: [ecommerce-net]
+    ports:
+      - "8080:8080"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT:            8080
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eurekauser:eurekapass123@eureka-server:8761/eureka/
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  # ============================================================
+  # MICROSERVICES LAYER
+  # ============================================================
+
+  # ── User Service ──────────────────────────────────────────
+  user-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: user-service
+    image: ecommerce/user-service:1.0.0
+    container_name: user-service
+    networks: [ecommerce-net]
+    ports:
+      - "8081:8081"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      user-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE:   prod
+      SERVER_PORT:              8081
+      SPRING_DATASOURCE_URL:    jdbc:postgresql://user-db:5432/user_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATA_REDIS_HOST:   redis
+      SPRING_DATA_REDIS_PORT:   6379
+      KAFKA_BOOTSTRAP_SERVERS:  kafka:9092
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eurekauser:eurekapass123@eureka-server:8761/eureka/
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health | grep -q UP"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+  # ── Product Service ────────────────────────────────────────
+  product-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: product-service
+    image: ecommerce/product-service:1.0.0
+    container_name: product-service
+    networks: [ecommerce-net]
+    ports:
+      - "8082:8082"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      product-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE:   prod
+      SERVER_PORT:              8082
+      SPRING_DATASOURCE_URL:    jdbc:postgresql://product-db:5432/product_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATA_REDIS_HOST:   redis
+      SPRING_DATA_REDIS_PORT:   6379
+      KAFKA_BOOTSTRAP_SERVERS:  kafka:9092
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eurekauser:eurekapass123@eureka-server:8761/eureka/
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/actuator/health | grep -q UP"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+  # ── Order Service ──────────────────────────────────────────
+  order-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: order-service
+    image: ecommerce/order-service:1.0.0
+    container_name: order-service
+    networks: [ecommerce-net]
+    ports:
+      - "8083:8083"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      order-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE:   prod
+      SERVER_PORT:              8083
+      SPRING_DATASOURCE_URL:    jdbc:postgresql://order-db:5432/order_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATA_REDIS_HOST:   redis
+      SPRING_DATA_REDIS_PORT:   6379
+      KAFKA_BOOTSTRAP_SERVERS:  kafka:9092
+      APP_SERVICES_PRODUCT_URL: http://product-service:8082
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eurekauser:eurekapass123@eureka-server:8761/eureka/
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/actuator/health | grep -q UP"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+  # ── Payment Service ────────────────────────────────────────
+  payment-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: payment-service
+    image: ecommerce/payment-service:1.0.0
+    container_name: payment-service
+    networks: [ecommerce-net]
+    ports:
+      - "8084:8084"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      payment-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE:   prod
+      SERVER_PORT:              8084
+      SPRING_DATASOURCE_URL:    jdbc:postgresql://payment-db:5432/payment_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      KAFKA_BOOTSTRAP_SERVERS:  kafka:9092
+      APP_PAYMENT_FAILURE_RATE: "0.1"
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eurekauser:eurekapass123@eureka-server:8761/eureka/
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8084/actuator/health | grep -q UP"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+  # ── Transaction Service ────────────────────────────────────
+  transaction-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: transaction-service
+    image: ecommerce/transaction-service:1.0.0
+    container_name: transaction-service
+    networks: [ecommerce-net]
+    ports:
+      - "8085:8085"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      transaction-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE:   prod
+      SERVER_PORT:              8085
+      SPRING_DATASOURCE_URL:    jdbc:postgresql://transaction-db:5432/transaction_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      KAFKA_BOOTSTRAP_SERVERS:  kafka:9092
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eurekauser:eurekapass123@eureka-server:8761/eureka/
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8085/actuator/health | grep -q UP"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+  # ── Audit Service ──────────────────────────────────────────
+  audit-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: audit-service
+    image: ecommerce/audit-service:1.0.0
+    container_name: audit-service
+    networks: [ecommerce-net]
+    ports:
+      - "8086:8086"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      audit-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE:   prod
+      SERVER_PORT:              8086
+      SPRING_DATASOURCE_URL:    jdbc:postgresql://audit-db:5432/audit_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      KAFKA_BOOTSTRAP_SERVERS:  kafka:9092
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eurekauser:eurekapass123@eureka-server:8761/eureka/
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8086/actuator/health | grep -q UP"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+  # ============================================================
+  # MONITORING LAYER
+  # ============================================================
+
+  # ── Prometheus ─────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: prometheus
+    networks: [ecommerce-net]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    depends_on:
+      - user-service
+      - product-service
+      - order-service
+      - payment-service
+      - transaction-service
+      - audit-service
+    restart: unless-stopped
+
+  # ── Grafana ────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.3.0
+    container_name: grafana
+    networks: [ecommerce-net]
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      GF_SECURITY_ADMIN_USER:     admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP:     "false"
+      GF_SERVER_ROOT_URL:         http://localhost:3000
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # ── Kafka UI (optional, very useful for development) ──────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    networks: [ecommerce-net]
+    ports:
+      - "8090:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME:            local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER:       zookeeper:2181
+    restart: unless-stopped

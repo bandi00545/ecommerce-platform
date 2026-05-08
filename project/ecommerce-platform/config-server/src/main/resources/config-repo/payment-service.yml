@@ -1,0 +1,54 @@
+# =============================================================================
+# payment-service.yml
+# =============================================================================
+server:
+  port: 8084
+spring:
+  application:
+    name: payment-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ecommerce
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: PaymentServiceHikariPool
+      maximum-pool-size: 10
+      minimum-idle: 2
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: payment_service
+  flyway:
+    url: ${spring.datasource.url}
+    user: ${spring.datasource.username}
+    password: ${spring.datasource.password}
+    schemas: payment_service
+    default-schema: payment_service
+    create-schemas: true
+app:
+  kafka:
+    topic:
+      payment-request: payment.request
+      payment-response: payment.response
+      audit: audit.events
+  payment:
+    # Simulated failure rate (0.0 = never fail, 0.3 = 30% chance of failure)
+    failure-rate: 0.1
+    processing-delay-ms: 500
+kafka:
+  bootstrap-servers: localhost:9092
+  producer:
+    key-serializer: org.apache.kafka.common.serialization.StringSerializer
+    value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    acks: all
+  consumer:
+    group-id: payment-service-group
+    auto-offset-reset: earliest
+    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+    properties:
+      spring.json.trusted.packages: "com.ecommerce.*"

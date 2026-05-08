@@ -1,0 +1,76 @@
+# =============================================================================
+# alerts.yml — Prometheus alerting rules for the e-commerce platform
+# =============================================================================
+
+groups:
+
+  - name: service_availability
+    rules:
+
+      # Alert when any service is DOWN
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.service }} is DOWN"
+          description: "{{ $labels.service }} has been unreachable for more than 1 minute."
+
+  - name: api_performance
+    rules:
+
+      # Alert on high error rate (>5% of requests returning 5xx)
+      - alert: HighErrorRate
+        expr: |
+          rate(http_server_requests_seconds_count{status=~"5.."}[5m])
+          /
+          rate(http_server_requests_seconds_count[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.service }}"
+          description: "More than 5% of requests to {{ $labels.service }} are returning 5xx errors."
+
+      # Alert on high P99 response time (>2 seconds)
+      - alert: SlowResponseTime
+        expr: |
+          histogram_quantile(0.99,
+            rate(http_server_requests_seconds_bucket[5m])
+          ) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow P99 response time on {{ $labels.service }}"
+          description: "P99 response time exceeds 2s on {{ $labels.service }} - {{ $labels.uri }}"
+
+  - name: jvm_health
+    rules:
+
+      # Alert when JVM heap usage > 85%
+      - alert: HighJvmHeapUsage
+        expr: |
+          jvm_memory_used_bytes{area="heap"}
+          /
+          jvm_memory_max_bytes{area="heap"} > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High JVM heap usage on {{ $labels.service }}"
+          description: "JVM heap is {{ $value | humanizePercentage }} full on {{ $labels.service }}"
+
+  - name: kafka_health
+    rules:
+
+      # Alert when Kafka consumer lag is too high (messages piling up)
+      - alert: KafkaConsumerLagHigh
+        expr: kafka_consumer_group_lag > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag is high"
+          description: "Consumer group lag > 1000 messages on topic {{ $labels.topic }}"

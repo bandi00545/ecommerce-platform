@@ -1,0 +1,120 @@
+# =============================================================================
+# prometheus.yml — Prometheus scrape configuration
+#
+# Scrapes /actuator/prometheus from every microservice every 15 seconds.
+# Metrics flow: Service → Prometheus → Grafana dashboard
+# =============================================================================
+
+global:
+  scrape_interval:     15s   # How often to scrape metrics
+  evaluation_interval: 15s   # How often to evaluate alerting rules
+  scrape_timeout:      10s
+
+  # Labels added to all metrics from this Prometheus instance
+  external_labels:
+    environment: production
+    cluster:     ecommerce-platform
+
+# =============================================================================
+# SCRAPE CONFIGS
+# Each job scrapes one or more service instances
+# =============================================================================
+scrape_configs:
+
+  # ── Prometheus self-monitoring ─────────────────────────────
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels:
+          service: prometheus
+
+  # ── API Gateway ────────────────────────────────────────────
+  - job_name: api-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["api-gateway:8080"]
+        labels:
+          service:     api-gateway
+          service_type: gateway
+
+  # ── Config Server ──────────────────────────────────────────
+  - job_name: config-server
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["config-server:8888"]
+        labels:
+          service: config-server
+
+  # ── Eureka Server ──────────────────────────────────────────
+  - job_name: eureka-server
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["eureka-server:8761"]
+        labels:
+          service: eureka-server
+
+  # ── User Service ───────────────────────────────────────────
+  - job_name: user-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["user-service:8081"]
+        labels:
+          service:      user-service
+          service_type: business
+
+  # ── Product Service ────────────────────────────────────────
+  - job_name: product-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["product-service:8082"]
+        labels:
+          service:      product-service
+          service_type: business
+
+  # ── Order Service ──────────────────────────────────────────
+  - job_name: order-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["order-service:8083"]
+        labels:
+          service:      order-service
+          service_type: business
+
+  # ── Payment Service ────────────────────────────────────────
+  - job_name: payment-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["payment-service:8084"]
+        labels:
+          service:      payment-service
+          service_type: business
+
+  # ── Transaction Service ────────────────────────────────────
+  - job_name: transaction-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["transaction-service:8085"]
+        labels:
+          service:      transaction-service
+          service_type: business
+
+  # ── Audit Service ──────────────────────────────────────────
+  - job_name: audit-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["audit-service:8086"]
+        labels:
+          service:      audit-service
+          service_type: business
+
+  # ── Redis ──────────────────────────────────────────────────
+  # (requires redis_exporter — add if needed)
+  # - job_name: redis
+  #   static_configs:
+  #     - targets: ["redis-exporter:9121"]
+
+# =============================================================================
+# ALERTING RULES
+# =============================================================================
+rule_files:
+  - "alerts.yml"

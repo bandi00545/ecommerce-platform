@@ -1,0 +1,162 @@
+# api-gateway/src/main/resources/application.yml
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  # Config Server connection (optional - service starts without it)
+  config:
+    import: optional:configserver:http://configuser:configpass123@localhost:8888
+
+  cloud:
+    config:
+      enabled: false
+      fail-fast: false
+
+    # Disable rate limiter (Redis) by default for local Eclipse runs
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origins:
+              - "http://localhost:3000"
+              - "http://localhost:4200"
+            allowed-methods: [GET, POST, PUT, DELETE, OPTIONS, PATCH]
+            allowed-headers: ["*"]
+            exposed-headers:
+              - X-Request-Id
+            allow-credentials: true
+            max-age: 3600
+
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+
+      # Use lb:// only when Eureka is on (prod profile).
+      # In default profile we use direct URLs so the gateway works without Eureka.
+      routes:
+        - id: user-auth-login
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/v1/auth/login
+            - Method=POST
+        - id: user-auth-register
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/v1/auth/register
+            - Method=POST
+        - id: user-service-routes
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/v1/users/**
+          filters:
+            - name: JwtAuthenticationFilter
+        - id: product-service-routes
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/v1/products/**
+        - id: order-service-routes
+          uri: http://localhost:8083
+          predicates:
+            - Path=/api/v1/orders/**
+          filters:
+            - name: JwtAuthenticationFilter
+        - id: payment-service-routes
+          uri: http://localhost:8084
+          predicates:
+            - Path=/api/v1/payments/**
+          filters:
+            - name: JwtAuthenticationFilter
+        - id: transaction-service-routes
+          uri: http://localhost:8085
+          predicates:
+            - Path=/api/v1/transactions/**
+          filters:
+            - name: JwtAuthenticationFilter
+              args:
+                requiredRole: ADMIN
+        - id: audit-service-routes
+          uri: http://localhost:8086
+          predicates:
+            - Path=/api/v1/audit/**
+          filters:
+            - name: JwtAuthenticationFilter
+              args:
+                requiredRole: ADMIN
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://eurekauser:eurekapass123@localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+jwt:
+  secret: ecommerce-jwt-secret-key-must-be-at-least-256-bits-long-for-hs256-algorithm
+  expiration-minutes: 60
+
+# Aggregated Swagger UI: links to each downstream service's OpenAPI spec
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    urls:
+      - name: User Service
+        url: http://localhost:8081/v3/api-docs
+      - name: Product Service
+        url: http://localhost:8082/v3/api-docs
+      - name: Order Service
+        url: http://localhost:8083/v3/api-docs
+      - name: Payment Service
+        url: http://localhost:8084/v3/api-docs
+      - name: Transaction Service
+        url: http://localhost:8085/v3/api-docs
+      - name: Audit Service
+        url: http://localhost:8086/v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,gateway
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.ecommerce.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  cloud:
+    config:
+      enabled: true
+    gateway:
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 100
+            redis-rate-limiter.burstCapacity: 200
+            redis-rate-limiter.requestedTokens: 1
+            key-resolver: "#{@ipKeyResolver}"
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+
+eureka:
+  client:
+    enabled: true
+    register-with-eureka: true
+    fetch-registry: true

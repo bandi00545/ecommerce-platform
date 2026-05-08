@@ -1,0 +1,116 @@
+# product-service/src/main/resources/application.yml
+server:
+  port: 8082
+
+spring:
+  application:
+    name: product-service
+
+  config:
+    import: optional:configserver:http://configuser:configpass123@localhost:8888
+
+  cloud:
+    config:
+      enabled: false
+      fail-fast: false
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ecommerce
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: ProductServiceHikariPool
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        default_schema: product_service
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    schemas: product_service
+    default-schema: product_service
+    create-schemas: true
+
+  cache:
+    type: simple
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer:   org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://eurekauser:eurekapass123@localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+app:
+  kafka:
+    topic:
+      audit:   audit.events
+      product: product.events
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+  packages-to-scan: com.ecommerce.productservice.controller
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: product-service
+
+logging:
+  level:
+    root: INFO
+    com.ecommerce: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  cloud:
+    config:
+      enabled: true
+  cache:
+    type: redis
+eureka:
+  client:
+    enabled: true
+    register-with-eureka: true
+    fetch-registry: true
